@@ -3,53 +3,241 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Simple 3D Game</title>
+    <title>Maze Explorer</title>
     <style>
         body { margin: 0; overflow: hidden; }
-        canvas { display: block; }
+        #info {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: white;
+            z-index: 1;
+            font-family: Arial, sans-serif;
+        }
+        #score {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            color: white;
+            z-index: 1;
+            font-family: Arial, sans-serif;
+        }
     </style>
 </head>
 <body>
-
+<div id="info">Find the exit! Use WASD to move. Time: <span id="timer">0</span>s</div>
+<div id="score">Score: <span id="scoreValue">0</span></div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://threejs.org/examples/js/controls/PointerLockControls.js"></script>
+
 <script>
-    // Setup the scene
-    const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+// Basic Three.js Setup
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+const renderer = new THREE.WebGLRenderer();
+renderer.setSize(window.innerWidth, window.innerHeight);
+document.body.appendChild(renderer.domElement);
 
-    const renderer = new THREE.WebGLRenderer();
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    document.body.appendChild(renderer.domElement);
+// Pointer Lock Controls
+const controls = new THREE.PointerLockControls(camera, document.body);
+document.addEventListener('click', () => {
+    controls.lock();
+}, false);
+scene.add(controls.getObject());
 
-    // Create a cube
-    const geometry = new THREE.BoxGeometry();
-    const material = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
-    const cube = new THREE.Mesh(geometry, material);
-    scene.add(cube);
+camera.position.y = 1.5;
 
-    camera.position.z = 5;
+// Player Movement
+const moveSpeed = 0.1;
+const keys = { w: false, a: false, s: false, d: false };
+document.addEventListener('keydown', (e) => { keys[e.key] = true; });
+document.addEventListener('keyup', (e) => { keys[e.key] = false; });
 
-    // Animation loop
-    function animate() {
-        requestAnimationFrame(animate);
+function movePlayer() {
+    if (keys.w) controls.moveForward(moveSpeed);
+    if (keys.s) controls.moveForward(-moveSpeed);
+    if (keys.a) controls.moveRight(-moveSpeed);
+    if (keys.d) controls.moveRight(moveSpeed);
+}
 
-        cube.rotation.x += 0.01;
-        cube.rotation.y += 0.01;
+// Maze Generation using Depth-First Search Algorithm
+const mazeSize = 10;
+const maze = [];
+const wallThickness = 0.5;
+const wallHeight = 2;
+const wallMaterial = new THREE.MeshStandardMaterial({ color: 0x007bff });
 
-        renderer.render(scene, camera);
+function generateMaze() {
+    // Initialize the maze grid
+    for (let x = 0; x < mazeSize; x++) {
+        maze[x] = [];
+        for (let z = 0; z < mazeSize; z++) {
+            maze[x][z] = { visited: false, walls: [true, true, true, true] }; // [N, E, S, W]
+        }
     }
 
-    animate();
+    // Depth-First Search to create the maze
+    function carveMaze(x, z) {
+        maze[x][z].visited = true;
+        const directions = [0, 1, 2, 3]; // N, E, S, W
+        shuffle(directions);
 
-    // Handle window resize
-    window.addEventListener('resize', () => {
-        const width = window.innerWidth;
-        const height = window.innerHeight;
-        renderer.setSize(width, height);
-        camera.aspect = width / height;
-        camera.updateProjectionMatrix();
+        directions.forEach(direction => {
+            const nx = x + [0, 1, 0, -1][direction];
+            const nz = z + [-1, 0, 1, 0][direction];
+
+            if (nx >= 0 && nx < mazeSize && nz >= 0 && nz < mazeSize && !maze[nx][nz].visited) {
+                maze[x][z].walls[direction] = false;
+                maze[nx][nz].walls[(direction + 2) % 4] = false;
+                carveMaze(nx, nz);
+            }
+        });
+    }
+
+    carveMaze(0, 0); // Start carving from the top-left corner
+    buildMaze();
+}
+
+function buildMaze() {
+    const wallGeometry = new THREE.BoxGeometry(wallThickness, wallHeight, 1);
+
+    for (let x = 0; x < mazeSize; x++) {
+        for (let z = 0; z < mazeSize; z++) {
+            const cell = maze[x][z];
+            if (cell.walls[0]) { // North
+                const wall = new THREE.Mesh(wallGeometry, wallMaterial);
+                wall.position.set(x * 2, wallHeight / 2, z * 2 - 0.5);
+                scene.add(wall);
+            }
+            if (cell.walls[1]) { // East
+                const wall = new THREE.Mesh(wallGeometry, wallMaterial);
+                wall.rotation.y = Math.PI / 2;
+                wall.position.set(x * 2 + 0.5, wallHeight / 2, z * 2);
+                scene.add(wall);
+            }
+            if (cell.walls[2]) { // South
+                const wall = new THREE.Mesh(wallGeometry, wallMaterial);
+                wall.position.set(x * 2, wallHeight / 2, z * 2 + 0.5);
+                scene.add(wall);
+            }
+            if (cell.walls[3]) { // West
+                const wall = new THREE.Mesh(wallGeometry, wallMaterial);
+                wall.rotation.y = Math.PI / 2;
+                wall.position.set(x * 2 - 0.5, wallHeight / 2, z * 2);
+                scene.add(wall);
+            }
+        }
+    }
+
+    // Add exit point
+    const exitGeometry = new THREE.BoxGeometry(1, 0.2, 1);
+    const exitMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+    const exit = new THREE.Mesh(exitGeometry, exitMaterial);
+    exit.position.set((mazeSize - 1) * 2, 0.1, (mazeSize - 1) * 2);
+    scene.add(exit);
+    maze.exit = exit;
+
+    // Add collectibles
+    const collectibleGeometry = new THREE.SphereGeometry(0.3, 16, 16);
+    const collectibleMaterial = new THREE.MeshBasicMaterial({ color: 0xffff00 });
+    maze.collectibles = [];
+
+    for (let i = 0; i < 5; i++) {
+        const collectible = new THREE.Mesh(collectibleGeometry, collectibleMaterial);
+        const cx = Math.floor(Math.random() * mazeSize);
+        const cz = Math.floor(Math.random() * mazeSize);
+        collectible.position.set(cx * 2, 0.3, cz * 2);
+        scene.add(collectible);
+        maze.collectibles.push(collectible);
+    }
+}
+
+function shuffle(array) {
+    for (let i = array.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [array[i], array[j]] = [array[j], array[i]];
+    }
+}
+
+generateMaze();
+
+// Timer and Score
+let startTime = Date.now();
+let score = 0;
+
+function updateTimerAndScore() {
+    const currentTime = Date.now();
+    const elapsedTime = Math.floor((currentTime - startTime) / 1000);
+    document.getElementById('timer').textContent = elapsedTime;
+
+    // Check if player reaches the exit
+    const playerPosition = controls.getObject().position;
+    const exitPosition = maze.exit.position;
+    if (Math.abs(playerPosition.x - exitPosition.x) < 0.5 && Math.abs(playerPosition.z - exitPosition.z) < 0.5) {
+        alert(`You found the exit in ${elapsedTime} seconds!`);
+        location.reload();
+    }
+
+    // Check if player collects an item
+    maze.collectibles = maze.collectibles.filter(collectible => {
+        if (Math.abs(playerPosition.x - collectible.position.x) < 0.5 && Math.abs(playerPosition.z - collectible.position.z) < 0.5) {
+            score += 100;
+            document.getElementById('scoreValue').textContent = score;
+            scene.remove(collectible);
+            return false;
+        }
+        return true;
     });
-</script>
+}
 
+// Lighting
+const ambientLight = new THREE.AmbientLight(0x404040);
+scene.add(ambientLight);
+
+const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
+directionalLight.position.set(1, 1, 1).normalize();
+scene.add(directionalLight);
+
+// Sound Effects
+const listener = new THREE.AudioListener();
+camera.add(listener);
+
+const sound = new THREE.Audio(listener);
+const audioLoader = new THREE.AudioLoader();
+audioLoader.load('path_to_background_music.mp3', function(buffer) {
+    sound.setBuffer(buffer);
+    sound.setLoop(true);
+    sound.setVolume(0.5);
+    sound.play();
+});
+
+const collectSound = new THREE.Audio(listener);
+audioLoader.load('path_to_collect_sound.mp3', function(buffer) {
+    collectSound.setBuffer(buffer);
+    collectSound.setVolume(1.0);
+});
+
+const exitSound = new THREE.Audio(listener);
+audioLoader.load('path_to_exit_sound.mp3', function(buffer) {
+    exitSound.setBuffer(buffer);
+    exitSound.setVolume(1.0);
+});
+
+// Animation Loop
+function animate() {
+    requestAnimationFrame(animate);
+    movePlayer();
+    updateTimerAndScore();
+    renderer.render(scene, camera);
+}
+animate();
+
+// Resize Event
+window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+});
+</script>
 </body>
 </html>
