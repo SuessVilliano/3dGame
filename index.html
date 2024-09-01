@@ -24,13 +24,26 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://threejs.org/examples/js/controls/PointerLockControls.js"></script>
+
 <script>
-// Basic Three.js Setup
+// Setup Three.js
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
 const renderer = new THREE.WebGLRenderer();
 renderer.setSize(window.innerWidth, window.innerHeight);
 document.body.appendChild(renderer.domElement);
+
+// Set the camera position to start
+camera.position.set(0, 1.5, 5);
+camera.lookAt(new THREE.Vector3(0, 1.5, 0));
+
+// Add ambient and directional light
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+scene.add(ambientLight);
+
+const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+directionalLight.position.set(5, 10, 7.5).normalize();
+scene.add(directionalLight);
 
 // Pointer Lock Controls
 const controls = new THREE.PointerLockControls(camera, document.body);
@@ -39,15 +52,13 @@ document.addEventListener('click', () => {
 }, false);
 scene.add(controls.getObject());
 
-camera.position.y = 1.5;
-
-// Player Movement
+// Player movement controls
 const moveSpeed = 0.1;
 let speedBoost = false;
 let invisibility = false;
 const keys = { w: false, a: false, s: false, d: false };
-document.addEventListener('keydown', (e) => { keys[e.key] = true; });
-document.addEventListener('keyup', (e) => { keys[e.key] = false; });
+document.addEventListener('keydown', (e) => { keys[e.key.toLowerCase()] = true; });
+document.addEventListener('keyup', (e) => { keys[e.key.toLowerCase()] = false; });
 
 function movePlayer() {
     if (keys.w) controls.moveForward(moveSpeed * (speedBoost ? 2 : 1));
@@ -70,6 +81,7 @@ let exit;
 let score = 0;
 let startTime = Date.now();
 
+// Maze generation using Depth-First Search Algorithm
 function generateMaze() {
     maze = [];
     for (let x = 0; x < mazeSize; x++) {
@@ -100,6 +112,7 @@ function generateMaze() {
     buildMaze();
 }
 
+// Function to build the maze based on the generated data
 function buildMaze() {
     // Clear existing maze objects
     scene.clear();
@@ -189,6 +202,7 @@ function buildMaze() {
     }
 }
 
+// Function to shuffle directions for maze generation
 function shuffle(array) {
     for (let i = array.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
@@ -196,6 +210,7 @@ function shuffle(array) {
     }
 }
 
+// Generate the initial maze
 generateMaze();
 
 // Timer and Score
@@ -269,75 +284,20 @@ function moveEnemies() {
     });
 }
 
-// Lighting
-const ambientLight = new THREE.AmbientLight(0x404040);
-scene.add(ambientLight);
-
-const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
-directionalLight.position.set(1, 1, 1).normalize();
-scene.add(directionalLight);
-
-// Sound Effects (Add your own paths to the sound files)
-const listener = new THREE.AudioListener();
-camera.add(listener);
-
-const sound = new THREE.Audio(listener);
-const audioLoader = new THREE.AudioLoader();
-audioLoader.load('path_to_background_music.mp3', function(buffer) {
-    sound.setBuffer(buffer);
-    sound.setLoop(true);
-    sound.setVolume(0.5);
-    sound.play();
-});
-
-const collectSound = new THREE.Audio(listener);
-audioLoader.load('path_to_collect_sound.mp3', function(buffer) {
-    collectSound.setBuffer(buffer);
-    collectSound.setVolume(1.0);
-});
-
-const exitSound = new THREE.Audio(listener);
-audioLoader.load('path_to_exit_sound.mp3', function(buffer) {
-    exitSound.setBuffer(buffer);
-    exitSound.setVolume(1.0);
-});
-
-// Multiplayer Setup (simple split screen)
-const player2 = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-player2.position.y = 1.5;
-const controls2 = new THREE.PointerLockControls(player2, document.body);
-scene.add(controls2.getObject());
-
-const moveSpeed2 = 0.1;
-const keys2 = { ArrowUp: false, ArrowLeft: false, ArrowDown: false, ArrowRight: false };
-document.addEventListener('keydown', (e) => { keys2[e.key] = true; });
-document.addEventListener('keyup', (e) => { keys2[e.key] = false; });
-
-function movePlayer2() {
-    if (keys2.ArrowUp) controls2.moveForward(moveSpeed2);
-    if (keys2.ArrowDown) controls2.moveForward(-moveSpeed2);
-    if (keys2.ArrowLeft) controls2.moveRight(-moveSpeed2);
-    if (keys2.ArrowRight) controls2.moveRight(moveSpeed2);
-}
-
 // Animation Loop
 function animate() {
     requestAnimationFrame(animate);
     movePlayer();
-    movePlayer2();
     moveEnemies();
     updateTimerAndScore();
     renderer.render(scene, camera);
-    renderer.render(scene, player2); // Render second player for multiplayer
 }
 animate();
 
-// Resize Event
+// Resize Event Listener
 window.addEventListener('resize', () => {
     camera.aspect = window.innerWidth / window.innerHeight;
-    player2.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
-    player2.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
 });
 </script>
