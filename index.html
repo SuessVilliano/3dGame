@@ -6,30 +6,24 @@
     <title>Maze Explorer</title>
     <style>
         body { margin: 0; overflow: hidden; }
-        #info {
+        #info, #score, #levelInfo {
             position: absolute;
-            top: 10px;
-            left: 10px;
             color: white;
             z-index: 1;
             font-family: Arial, sans-serif;
         }
-        #score {
-            position: absolute;
-            top: 10px;
-            right: 10px;
-            color: white;
-            z-index: 1;
-            font-family: Arial, sans-serif;
-        }
+        #info { top: 10px; left: 10px; }
+        #score { top: 10px; right: 10px; }
+        #levelInfo { top: 50px; left: 10px; }
     </style>
 </head>
 <body>
 <div id="info">Find the exit! Use WASD to move. Time: <span id="timer">0</span>s</div>
 <div id="score">Score: <span id="scoreValue">0</span></div>
+<div id="levelInfo">Level: <span id="levelNumber">1</span></div>
+
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://threejs.org/examples/js/controls/PointerLockControls.js"></script>
-
 <script>
 // Basic Three.js Setup
 const scene = new THREE.Scene();
@@ -49,26 +43,35 @@ camera.position.y = 1.5;
 
 // Player Movement
 const moveSpeed = 0.1;
+let speedBoost = false;
+let invisibility = false;
 const keys = { w: false, a: false, s: false, d: false };
 document.addEventListener('keydown', (e) => { keys[e.key] = true; });
 document.addEventListener('keyup', (e) => { keys[e.key] = false; });
 
 function movePlayer() {
-    if (keys.w) controls.moveForward(moveSpeed);
-    if (keys.s) controls.moveForward(-moveSpeed);
-    if (keys.a) controls.moveRight(-moveSpeed);
-    if (keys.d) controls.moveRight(moveSpeed);
+    if (keys.w) controls.moveForward(moveSpeed * (speedBoost ? 2 : 1));
+    if (keys.s) controls.moveForward(-moveSpeed * (speedBoost ? 2 : 1));
+    if (keys.a) controls.moveRight(-moveSpeed * (speedBoost ? 2 : 1));
+    if (keys.d) controls.moveRight(moveSpeed * (speedBoost ? 2 : 1));
 }
 
-// Maze Generation using Depth-First Search Algorithm
-const mazeSize = 10;
-const maze = [];
+// Level and Maze Settings
+let level = 1;
+let mazeSize = 10;
+let maze = [];
 const wallThickness = 0.5;
 const wallHeight = 2;
 const wallMaterial = new THREE.MeshStandardMaterial({ color: 0x007bff });
+let enemies = [];
+let collectibles = [];
+let powerUps = [];
+let exit;
+let score = 0;
+let startTime = Date.now();
 
 function generateMaze() {
-    // Initialize the maze grid
+    maze = [];
     for (let x = 0; x < mazeSize; x++) {
         maze[x] = [];
         for (let z = 0; z < mazeSize; z++) {
@@ -76,7 +79,6 @@ function generateMaze() {
         }
     }
 
-    // Depth-First Search to create the maze
     function carveMaze(x, z) {
         maze[x][z].visited = true;
         const directions = [0, 1, 2, 3]; // N, E, S, W
@@ -99,6 +101,12 @@ function generateMaze() {
 }
 
 function buildMaze() {
+    // Clear existing maze objects
+    scene.clear();
+    enemies = [];
+    collectibles = [];
+    powerUps = [];
+    
     const wallGeometry = new THREE.BoxGeometry(wallThickness, wallHeight, 1);
 
     for (let x = 0; x < mazeSize; x++) {
@@ -132,15 +140,13 @@ function buildMaze() {
     // Add exit point
     const exitGeometry = new THREE.BoxGeometry(1, 0.2, 1);
     const exitMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 });
-    const exit = new THREE.Mesh(exitGeometry, exitMaterial);
+    exit = new THREE.Mesh(exitGeometry, exitMaterial);
     exit.position.set((mazeSize - 1) * 2, 0.1, (mazeSize - 1) * 2);
     scene.add(exit);
-    maze.exit = exit;
 
     // Add collectibles
     const collectibleGeometry = new THREE.SphereGeometry(0.3, 16, 16);
     const collectibleMaterial = new THREE.MeshBasicMaterial({ color: 0xffff00 });
-    maze.collectibles = [];
 
     for (let i = 0; i < 5; i++) {
         const collectible = new THREE.Mesh(collectibleGeometry, collectibleMaterial);
@@ -148,7 +154,38 @@ function buildMaze() {
         const cz = Math.floor(Math.random() * mazeSize);
         collectible.position.set(cx * 2, 0.3, cz * 2);
         scene.add(collectible);
-        maze.collectibles.push(collectible);
+        collectibles.push(collectible);
+    }
+
+    // Add power-ups (speed boost and invisibility)
+    const speedBoostMaterial = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
+    const invisibilityMaterial = new THREE.MeshBasicMaterial({ color: 0x0000ff });
+
+    for (let i = 0; i < 2; i++) {
+        const powerUpType = Math.random() > 0.5 ? 'speed' : 'invisibility';
+        const powerUpMaterial = powerUpType === 'speed' ? speedBoostMaterial : invisibilityMaterial;
+
+        const powerUp = new THREE.Mesh(collectibleGeometry, powerUpMaterial);
+        const px = Math.floor(Math.random() * mazeSize);
+        const pz = Math.floor(Math.random() * mazeSize);
+        powerUp.position.set(px * 2, 0.3, pz * 2);
+        powerUp.type = powerUpType;
+        scene.add(powerUp);
+        powerUps.push(powerUp);
+    }
+
+    // Add enemies
+    const enemyGeometry = new THREE.BoxGeometry(1, 1, 1);
+    const enemyMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+
+    for (let i = 0; i < 3; i++) {
+        const enemy = new THREE.Mesh(enemyGeometry, enemyMaterial);
+        const ex = Math.floor(Math.random() * mazeSize);
+        const ez = Math.floor(Math.random() * mazeSize);
+        enemy.position.set(ex * 2, 0.5, ez * 2);
+        enemy.direction = Math.random() > 0.5 ? 1 : -1; // Move horizontally or vertically
+        scene.add(enemy);
+        enemies.push(enemy);
     }
 }
 
@@ -162,9 +199,6 @@ function shuffle(array) {
 generateMaze();
 
 // Timer and Score
-let startTime = Date.now();
-let score = 0;
-
 function updateTimerAndScore() {
     const currentTime = Date.now();
     const elapsedTime = Math.floor((currentTime - startTime) / 1000);
@@ -172,14 +206,18 @@ function updateTimerAndScore() {
 
     // Check if player reaches the exit
     const playerPosition = controls.getObject().position;
-    const exitPosition = maze.exit.position;
+    const exitPosition = exit.position;
     if (Math.abs(playerPosition.x - exitPosition.x) < 0.5 && Math.abs(playerPosition.z - exitPosition.z) < 0.5) {
-        alert(`You found the exit in ${elapsedTime} seconds!`);
-        location.reload();
+        alert(`Level ${level} completed in ${elapsedTime} seconds!`);
+        level++;
+        mazeSize += 5;
+        document.getElementById('levelNumber').textContent = level;
+        startTime = Date.now();
+        generateMaze();
     }
 
     // Check if player collects an item
-    maze.collectibles = maze.collectibles.filter(collectible => {
+    collectibles = collectibles.filter(collectible => {
         if (Math.abs(playerPosition.x - collectible.position.x) < 0.5 && Math.abs(playerPosition.z - collectible.position.z) < 0.5) {
             score += 100;
             document.getElementById('scoreValue').textContent = score;
@@ -187,6 +225,47 @@ function updateTimerAndScore() {
             return false;
         }
         return true;
+    });
+
+    // Check if player collects a power-up
+    powerUps = powerUps.filter(powerUp => {
+        if (Math.abs(playerPosition.x - powerUp.position.x) < 0.5 && Math.abs(playerPosition.z - powerUp.position.z) < 0.5) {
+            if (powerUp.type === 'speed') {
+                speedBoost = true;
+                setTimeout(() => speedBoost = false, 10000); // Speed boost lasts for 10 seconds
+            } else if (powerUp.type === 'invisibility') {
+                invisibility = true;
+                setTimeout(() => invisibility = false, 10000); // Invisibility lasts for 10 seconds
+            }
+            scene.remove(powerUp);
+            return false;
+        }
+        return true;
+    });
+}
+
+// Enemy Movement
+function moveEnemies() {
+    enemies.forEach(enemy => {
+        const direction = enemy.direction;
+        if (Math.random() > 0.5) { // Move horizontally
+            enemy.position.x += direction * 0.1;
+            if (enemy.position.x < 0 || enemy.position.x > (mazeSize - 1) * 2) {
+                enemy.direction *= -1;
+            }
+        } else { // Move vertically
+            enemy.position.z += direction * 0.1;
+            if (enemy.position.z < 0 || enemy.position.z > (mazeSize - 1) * 2) {
+                enemy.direction *= -1;
+            }
+        }
+
+        // Check for collision with player
+        const playerPosition = controls.getObject().position;
+        if (!invisibility && Math.abs(playerPosition.x - enemy.position.x) < 0.5 && Math.abs(playerPosition.z - enemy.position.z) < 0.5) {
+            alert('You were caught by an enemy!');
+            location.reload();
+        }
     });
 }
 
@@ -198,7 +277,7 @@ const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
 directionalLight.position.set(1, 1, 1).normalize();
 scene.add(directionalLight);
 
-// Sound Effects
+// Sound Effects (Add your own paths to the sound files)
 const listener = new THREE.AudioListener();
 camera.add(listener);
 
@@ -223,19 +302,42 @@ audioLoader.load('path_to_exit_sound.mp3', function(buffer) {
     exitSound.setVolume(1.0);
 });
 
+// Multiplayer Setup (simple split screen)
+const player2 = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+player2.position.y = 1.5;
+const controls2 = new THREE.PointerLockControls(player2, document.body);
+scene.add(controls2.getObject());
+
+const moveSpeed2 = 0.1;
+const keys2 = { ArrowUp: false, ArrowLeft: false, ArrowDown: false, ArrowRight: false };
+document.addEventListener('keydown', (e) => { keys2[e.key] = true; });
+document.addEventListener('keyup', (e) => { keys2[e.key] = false; });
+
+function movePlayer2() {
+    if (keys2.ArrowUp) controls2.moveForward(moveSpeed2);
+    if (keys2.ArrowDown) controls2.moveForward(-moveSpeed2);
+    if (keys2.ArrowLeft) controls2.moveRight(-moveSpeed2);
+    if (keys2.ArrowRight) controls2.moveRight(moveSpeed2);
+}
+
 // Animation Loop
 function animate() {
     requestAnimationFrame(animate);
     movePlayer();
+    movePlayer2();
+    moveEnemies();
     updateTimerAndScore();
     renderer.render(scene, camera);
+    renderer.render(scene, player2); // Render second player for multiplayer
 }
 animate();
 
 // Resize Event
 window.addEventListener('resize', () => {
     camera.aspect = window.innerWidth / window.innerHeight;
+    player2.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
+    player2.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
 });
 </script>
